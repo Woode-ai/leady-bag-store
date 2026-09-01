@@ -711,7 +711,14 @@ export async function POST(req: NextRequest) {
             )
             .join("\n");
 
-        const message =
+            const message = 
+  `🚨 *طلب جديد في متجر Leadybag!*\n\n` +
+  `📦 *رقم الطلب:* #${order.trackingNumber}\n` +
+  `👤 *اسم العميل:* ${buyerForEmail?.name || "Customer"}\n` +
+  `📍 *العنوان:* ${order.shippingAddress}\n\n` +
+  `🛒 *المنتجات المطلوبة:*\n${itemsText}\n\n` +
+  `💰 *الإجمالي الكلي:* ${order.total} SDG`;
+       /* const message =
           `🚨 New Leadybag order\n\n` +
           `📦 Tracking: #${order.trackingNumber}\n` +
           `👤 Customer: ${
@@ -721,7 +728,7 @@ export async function POST(req: NextRequest) {
           `📍 Address: ${order.shippingAddress}\n\n` +
           `🛒 Items:\n${itemsText}\n\n` +
           `💰 Total: ${order.total} SDG`;
-
+*/
         const telegramResponse =
           await fetch(
             `https://api.telegram.org/bot${botToken}/sendMessage`,

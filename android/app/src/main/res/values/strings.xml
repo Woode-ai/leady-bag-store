@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">leadybag</string>
+    <string name="title_activity_main">leadybag</string>
+    <string name="package_name">com.leadybag.store</string>
+    <string name="custom_url_scheme">com.leadybag.store</string>
+</resources>
