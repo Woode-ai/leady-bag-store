@@ -124,6 +124,9 @@ export default function Home() {
             <div>
               <h4 className="font-bold text-secondary text-xs">نقاط ومكافآت هدايا</h4>
               <p className="text-[11px] text-gray-500">خصومات نقدية مع كل طلب</p>
+              
+              <h4 className="font-bold text-secondary text-xs">سجلى معانا وانتى الكسبانه</h4>
+              <p className="text-[11px] text-gray-500">اقوى العروض والمسابقات </p>
             </div>
           </div>
 
@@ -138,15 +141,8 @@ export default function Home() {
           </div>
         </div>
         
-          <div className="flex items-center gap-3 bg-gray-50/60 p-4 rounded-2xl border border-gray-100">
-  <div className="w-10 h-10 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center shrink-0">
-    <Gift size={20} />
-  </div>
-  <div>
-              <h4 className="font-bold text-secondary text-xs">سجلى معانا وانتى الكسبانه</h4>
-              <p className="text-[11px] text-gray-500">اقوى العروض والمسابقات </p>
-            </div>
-          </div>
+          
+          
       </section>
 
       {/* قسم Shop the Look (تنسيق الإطلالة الكاملة) */}
