@@ -59,6 +59,14 @@ export async function GET(req: NextRequest) {
         .lean(),
     ]);
 
+    // إنشاء خريطة للمنتجات لضمان جلب سعر الشراء حتى لو كان الـ productId في الطلبات غير معالج عبر populate
+    const productsMap = new Map<string, any>();
+    for (const p of allProducts) {
+      if (p?._id) {
+        productsMap.set(p._id.toString(), p);
+      }
+    }
+
     const salesOrders = allOrders.filter(isValidSalesOrder);
 
     let totalRevenue = 0;
@@ -81,11 +89,22 @@ export async function GET(req: NextRequest) {
       totalRevenue += orderTotal;
 
       for (const item of order.items || []) {
-        const product = item.productId as any;
+        const rawProductId = item.productId;
+        const prodIdStr =
+          rawProductId && typeof rawProductId === "object" && rawProductId._id
+            ? rawProductId._id.toString()
+            : rawProductId
+            ? rawProductId.toString()
+            : "";
+
+        const product =
+          (rawProductId && typeof rawProductId === "object" && rawProductId.purchasePrice !== undefined)
+            ? rawProductId
+            : productsMap.get(prodIdStr);
 
         const quantity = Number(item.quantity) || 0;
         const sellingPrice = Number(item.price) || 0;
-        // استخدام purchasePrice الصحيح وفق نموذج البيانات
+        // استخدام purchasePrice الصحيح
         const purchaseCost = Number(product?.purchasePrice) || 0;
 
         const itemRevenue = sellingPrice * quantity;
@@ -94,14 +113,14 @@ export async function GET(req: NextRequest) {
         totalCost += itemCost;
         totalItemsSold += quantity;
 
-        if (product?._id) {
-          const id = product._id.toString();
+        if (prodIdStr || product?._id) {
+          const id = prodIdStr || product._id.toString();
 
           if (!salesCount[id]) {
             salesCount[id] = {
               name:
-                product.name?.ar ||
-                product.name?.en ||
+                product?.name?.ar ||
+                product?.name?.en ||
                 "منتج",
               count: 0,
               revenue: 0,
@@ -181,7 +200,19 @@ export async function GET(req: NextRequest) {
         daySales += Number(order.total) || 0;
 
         for (const item of order.items || []) {
-          const product = item.productId as any;
+          const rawProductId = item.productId;
+          const prodIdStr =
+            rawProductId && typeof rawProductId === "object" && rawProductId._id
+              ? rawProductId._id.toString()
+              : rawProductId
+              ? rawProductId.toString()
+              : "";
+
+          const product =
+            (rawProductId && typeof rawProductId === "object" && rawProductId.purchasePrice !== undefined)
+              ? rawProductId
+              : productsMap.get(prodIdStr);
+
           const quantity = Number(item.quantity) || 0;
           const purchaseCost = Number(product?.purchasePrice) || 0;
 
