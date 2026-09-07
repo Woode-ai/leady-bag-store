@@ -11,8 +11,13 @@ import Order from "@/models/Order";
 
 export async function POST(req: NextRequest) {
   try {
+    // 1. استخراج الترويسة (Header) الخاصة بتوقيع Stripe
+    const signature = req.headers.get("stripe-signature");
+
     const body = await req.text();
     const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+
+    // 2. التحقق من وجود التوقيع والمفتاح السري
     if (!webhookSecret || typeof webhookSecret !== "string" || !signature) {
       return NextResponse.json(
         { status: "error", message: "إعدادات أو ترويسة Stripe Webhook غير صالحة" },
@@ -70,10 +75,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ received: true });
   } catch (error: unknown) {
     return NextResponse.json(
-      { status: "error", message: "حدث خطأ في السيرفر", ...(process.env.NODE_ENV !== "production" && { error: (error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error)) }) },
+      { status: "error", message: "حدث خطأ في السيرفر", ...(process.env.NODE_ENV !== "production" && { error: (error instanceof Error ? error.message : String(error)) }) },
       { status: 500 }
     );
   }
 }
-
-
