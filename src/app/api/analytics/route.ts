@@ -17,9 +17,7 @@ function isValidSalesOrder(order: any) {
     return false;
   }
 
-  if (
-    order.returnStatus === "approved"
-  ) {
+  if (order.returnStatus === "approved") {
     return false;
   }
 
@@ -47,38 +45,21 @@ export async function GET(req: NextRequest) {
     await connectDB();
 
     // =========================================================
-    // جلب البيانات
+    // جلب البيانات مع حقول الشراء الصحيحة (purchasePrice)
     // =========================================================
 
     const [allOrders, allProducts] = await Promise.all([
       Order.find()
-        .populate("items.productId", "name costPrice price")
+        .populate("items.productId", "name purchasePrice price")
         .sort({ createdAt: -1 })
         .lean(),
 
       Product.find()
-        .select("name stock costPrice price")
+        .select("name stock purchasePrice price")
         .lean(),
     ]);
 
-    // =========================================================
-    // الطلبات التي تعتبر مبيعات فعلية
-    //
-    // paid      = مدفوع
-    // verified  = تم التحقق من التحويل البنكي
-    // cod       = دفع عند الاستلام
-    //
-    // نستبعد:
-    // cancelled
-    // returned
-    // refund approved
-    // =========================================================
-
     const salesOrders = allOrders.filter(isValidSalesOrder);
-
-    // =========================================================
-    // الإحصائيات الأساسية
-    // =========================================================
 
     let totalRevenue = 0;
     let totalCost = 0;
@@ -97,7 +78,6 @@ export async function GET(req: NextRequest) {
 
     for (const order of salesOrders) {
       const orderTotal = Number(order.total) || 0;
-
       totalRevenue += orderTotal;
 
       for (const item of order.items || []) {
@@ -105,10 +85,11 @@ export async function GET(req: NextRequest) {
 
         const quantity = Number(item.quantity) || 0;
         const sellingPrice = Number(item.price) || 0;
-        const costPrice = Number(product?.costPrice) || 0;
+        // استخدام purchasePrice الصحيح وفق نموذج البيانات
+        const purchaseCost = Number(product?.purchasePrice) || 0;
 
         const itemRevenue = sellingPrice * quantity;
-        const itemCost = costPrice * quantity;
+        const itemCost = purchaseCost * quantity;
 
         totalCost += itemCost;
         totalItemsSold += quantity;
@@ -121,8 +102,7 @@ export async function GET(req: NextRequest) {
               name:
                 product.name?.ar ||
                 product.name?.en ||
-                "منتج محذوف",
-
+                "منتج",
               count: 0,
               revenue: 0,
               cost: 0,
@@ -138,16 +118,6 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // =========================================================
-    // الربح
-    //
-    // نستخدم:
-    // المبيعات - تكلفة المنتجات
-    //
-    // الخصومات موجودة بالفعل في order.total
-    // لذلك لا نطرحها مرة أخرى.
-    // =========================================================
-
     const totalProfit = totalRevenue - totalCost;
 
     const profitMargin =
@@ -155,24 +125,12 @@ export async function GET(req: NextRequest) {
         ? (totalProfit / totalRevenue) * 100
         : 0;
 
-    // =========================================================
-    // إجمالي الخصومات
-    // =========================================================
-
     const totalDiscount = salesOrders.reduce(
       (sum, order) => sum + (Number(order.discount) || 0),
       0
     );
 
-    // =========================================================
-    // عدد المنتجات
-    // =========================================================
-
     const totalProducts = allProducts.length;
-
-    // =========================================================
-    // المخزون المنخفض
-    // =========================================================
 
     const lowStockProducts = allProducts
       .filter((product) => Number(product.stock) < 5)
@@ -180,12 +138,8 @@ export async function GET(req: NextRequest) {
         _id: product._id,
         name: product.name,
         stock: product.stock,
-        costPrice: product.costPrice || 0,
+        purchasePrice: (product as any).purchasePrice || 0,
       }));
-
-    // =========================================================
-    // أكثر المنتجات مبيعاً
-    // =========================================================
 
     const topProducts = Object.values(salesCount)
       .sort((a, b) => b.count - a.count)
@@ -196,10 +150,6 @@ export async function GET(req: NextRequest) {
         cost: roundMoney(product.cost),
         profit: roundMoney(product.profit),
       }));
-
-    // =========================================================
-    // آخر 7 أيام
-    // =========================================================
 
     const last7Days: {
       date: string;
@@ -212,7 +162,6 @@ export async function GET(req: NextRequest) {
 
     for (let i = 6; i >= 0; i--) {
       const day = new Date();
-
       day.setDate(day.getDate() - i);
       day.setHours(0, 0, 0, 0);
 
@@ -221,11 +170,7 @@ export async function GET(req: NextRequest) {
 
       const dayOrders = salesOrders.filter((order: any) => {
         const createdAt = new Date(order.createdAt);
-
-        return (
-          createdAt >= day &&
-          createdAt < nextDay
-        );
+        return createdAt >= day && createdAt < nextDay;
       });
 
       let daySales = 0;
@@ -237,36 +182,23 @@ export async function GET(req: NextRequest) {
 
         for (const item of order.items || []) {
           const product = item.productId as any;
-
           const quantity = Number(item.quantity) || 0;
-          const costPrice =
-            Number(product?.costPrice) || 0;
+          const purchaseCost = Number(product?.purchasePrice) || 0;
 
-          dayCost += costPrice * quantity;
+          dayCost += purchaseCost * quantity;
           dayItems += quantity;
         }
       }
 
       last7Days.push({
         date: day.toISOString().split("T")[0],
-
         sales: roundMoney(daySales),
-
         cost: roundMoney(dayCost),
-
-        profit: roundMoney(
-          daySales - dayCost
-        ),
-
+        profit: roundMoney(daySales - dayCost),
         orders: dayOrders.length,
-
         items: dayItems,
       });
     }
-
-    // =========================================================
-    // إحصائيات إضافية
-    // =========================================================
 
     const pendingOrders = allOrders.filter(
       (order: any) =>
@@ -276,73 +208,40 @@ export async function GET(req: NextRequest) {
     ).length;
 
     const cancelledOrders = allOrders.filter(
-      (order: any) =>
-        order.status === "cancelled"
+      (order: any) => order.status === "cancelled"
     ).length;
 
     const returnedOrders = allOrders.filter(
       (order: any) =>
-        order.status === "returned" ||
-        order.returnStatus === "approved"
+        order.status === "returned" || order.returnStatus === "approved"
     ).length;
 
     const averageOrderValue =
-      salesOrders.length > 0
-        ? totalRevenue / salesOrders.length
-        : 0;
-
-    // =========================================================
-    // التحقق من المنتجات التي لا تحتوي سعر شراء
-    // =========================================================
+      salesOrders.length > 0 ? totalRevenue / salesOrders.length : 0;
 
     const productsWithoutCost = allProducts.filter(
       (product) =>
-        !Number(product.costPrice) ||
-        Number(product.costPrice) <= 0
+        !(product as any).purchasePrice || Number((product as any).purchasePrice) <= 0
     ).length;
-
-    // =========================================================
-    // الاستجابة
-    // =========================================================
 
     return NextResponse.json({
       status: "success",
-
       analytics: {
-        // الأساسية
         totalRevenue: roundMoney(totalRevenue),
         totalCost: roundMoney(totalCost),
         totalProfit: roundMoney(totalProfit),
-
         profitMargin: roundMoney(profitMargin),
-
         totalOrders: salesOrders.length,
-
         totalItemsSold,
-
         totalProducts,
-
         totalDiscount: roundMoney(totalDiscount),
-
-        averageOrderValue: roundMoney(
-          averageOrderValue
-        ),
-
-        // حالات الطلبات
+        averageOrderValue: roundMoney(averageOrderValue),
         pendingOrders,
-
         cancelledOrders,
-
         returnedOrders,
-
-        // المنتجات
         productsWithoutCost,
-
         lowStockProducts,
-
         topProducts,
-
-        // الرسم البياني
         last7Days,
       },
     });
@@ -352,15 +251,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(
       {
         status: "error",
-
-        message:
-          "حدث خطأ أثناء تحميل الإحصائيات",
-
+        message: "حدث خطأ أثناء تحميل الإحصائيات",
         ...(process.env.NODE_ENV !== "production" && {
-          error:
-            error instanceof Error
-              ? error.message
-              : String(error),
+          error: error instanceof Error ? error.message : String(error),
         }),
       },
       { status: 500 }

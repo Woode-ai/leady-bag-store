@@ -1,16 +1,18 @@
 // src/app/api/auth/reset-password/route.ts
 // POST /api/auth/reset-password
-// يتحقق من رمز OTP الذي أرسلناه عبر /forgot-password، ثم يحدّث كلمة المرور إذا كان صحيحاً وغير منتهي الصلاحية
+// يتحقق من رمز OTP ثم يحدّث كلمة المرور بأمان
 
 import { NextRequest, NextResponse } from "next/server";
-import bcrypt from "bcryptjs";
 import { connectDB } from "@/lib/db";
 import User from "@/models/User";
 import { checkRateLimit, resetRateLimit, getClientIp } from "@/lib/rateLimit";
+import { sanitizeInput } from "@/lib/sanitize";
+import { hashPassword } from "@/lib/password";
 
 export async function POST(request: NextRequest) {
   try {
-    const { email, code, newPassword } = await request.json();
+    const rawBody = await request.json();
+    const { email, code, newPassword } = sanitizeInput(rawBody);
 
     if (!email || !code || !newPassword) {
       return NextResponse.json(
@@ -28,11 +30,10 @@ export async function POST(request: NextRequest) {
 
     const normalizedEmail = String(email).toLowerCase().trim();
 
-    // حماية من تخمين رمز OTP (6 أرقام = مليون احتمال) عبر تحديد عدد المحاولات المسموحة
-    // بدون هذا، يستطيع أي شخص كتابة سكربت يجرّب كل الأرقام خلال دقائق ويستولي على أي حساب
+    // حماية من تخمين رمز OTP
     const clientIp = getClientIp(request);
     const rateLimitKey = `reset-password:${clientIp}:${normalizedEmail}`;
-    const rateLimit = checkRateLimit(rateLimitKey);
+    const rateLimit = checkRateLimit(rateLimitKey, 5, 15 * 60 * 1000);
     if (!rateLimit.allowed) {
       return NextResponse.json(
         {
@@ -47,7 +48,6 @@ export async function POST(request: NextRequest) {
 
     await connectDB();
 
-    // نطلب صراحة passwordResetCode/passwordResetExpires لأن select: false في النموذج يخفيهما افتراضياً
     const user = await User.findOne({ email: normalizedEmail }).select(
       "+passwordResetCode +passwordResetExpires"
     );
@@ -65,12 +65,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    const hashedPassword = await hashPassword(newPassword);
 
     user.password = hashedPassword;
     user.passwordResetCode = undefined;
     user.passwordResetExpires = undefined;
-    // نصفّر أي قفل/محاولات دخول فاشلة سابقة بما أن العميل أثبت ملكيته للحساب عبر البريد الإلكتروني
     user.failedLoginAttempts = 0;
     user.lockUntil = undefined;
     await user.save();
@@ -89,5 +88,3 @@ export async function POST(request: NextRequest) {
     );
   }
 }
-
-

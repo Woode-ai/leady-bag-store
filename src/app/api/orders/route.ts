@@ -711,24 +711,21 @@ export async function POST(req: NextRequest) {
             )
             .join("\n");
 
-            const message = 
-  `🚨 *طلب جديد في متجر Leadybag!*\n\n` +
-  `📦 *رقم الطلب:* #${order.trackingNumber}\n` +
-  `👤 *اسم العميل:* ${buyerForEmail?.name || "Customer"}\n` +
-  `📍 *العنوان:* ${order.shippingAddress}\n\n` +
-  `🛒 *المنتجات المطلوبة:*\n${itemsText}\n\n` +
-  `💰 *الإجمالي الكلي:* ${order.total} SDG`;
-       /* const message =
-          `🚨 New Leadybag order\n\n` +
-          `📦 Tracking: #${order.trackingNumber}\n` +
-          `👤 Customer: ${
-            buyerForEmail?.name ||
-            "Customer"
-          }\n` +
-          `📍 Address: ${order.shippingAddress}\n\n` +
-          `🛒 Items:\n${itemsText}\n\n` +
-          `💰 Total: ${order.total} SDG`;
-*/
+        const escapeTelegramText = (text: string) =>
+          String(text || "").replace(/[_*[\]()~`>#+=|{}.!-]/g, " ");
+
+        const customerName = escapeTelegramText(buyerForEmail?.name || "Customer");
+        const shippingAddr = escapeTelegramText(order.shippingAddress || "");
+        const trackingNum = escapeTelegramText(order.trackingNumber || "");
+
+        const message = 
+  `🚨 طلب جديد في متجر Leadybag!\n\n` +
+  `📦 رقم الطلب: #${trackingNum}\n` +
+  `👤 اسم العميل: ${customerName}\n` +
+  `📍 العنوان: ${shippingAddr}\n\n` +
+  `🛒 المنتجات المطلوبة:\n${itemsText}\n\n` +
+  `💰 الإجمالي الكلي: ${order.total} SDG`;
+
         const telegramResponse =
           await fetch(
             `https://api.telegram.org/bot${botToken}/sendMessage`,

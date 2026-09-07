@@ -9,6 +9,7 @@ import { connectDB } from "@/lib/db";
 import Cart from "@/models/Cart";
 import { getCurrentUser } from "@/lib/auth";
 import { cartItemSchema } from "@/lib/validation";
+import { sanitizeInput } from "@/lib/sanitize";
 
 export async function GET(req: NextRequest) {
   try {
@@ -26,7 +27,6 @@ export async function GET(req: NextRequest) {
       "name price discountPrice images stock"
     );
 
-    // إذا لم يكن للمستخدم سلة بعد، ننشئ له واحدة فارغة تلقائياً
     if (!cart) {
       cart = await Cart.create({ userId: currentUser.userId, items: [] });
     }
@@ -50,7 +50,13 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ status: "success", cart, coupon: couponData });
   } catch (error: unknown) {
     return NextResponse.json(
-      { status: "error", message: "حدث خطأ في السيرفر", ...(process.env.NODE_ENV !== "production" && { error: (error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error)) }) },
+      {
+        status: "error",
+        message: "حدث خطأ في السيرفر",
+        ...(process.env.NODE_ENV !== "production" && {
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      },
       { status: 500 }
     );
   }
@@ -67,7 +73,8 @@ export async function POST(req: NextRequest) {
     }
 
     await connectDB();
-    const body = await req.json();
+    const rawBody = await req.json();
+    const body = sanitizeInput(rawBody);
 
     const parsed = cartItemSchema.safeParse(body);
     if (!parsed.success) {
@@ -83,7 +90,6 @@ export async function POST(req: NextRequest) {
       cart = new Cart({ userId: currentUser.userId, items: [] });
     }
 
-    // إذا كان المنتج موجوداً بالفعل في السلة، نزيد كميته بدلاً من تكراره
     const existingItem = cart.items.find((item: any) => item.productId.toString() === productId);
     if (existingItem) {
       existingItem.quantity += quantity;
@@ -97,7 +103,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ status: "success", message: "تمت إضافة المنتج للسلة", cart });
   } catch (error: unknown) {
     return NextResponse.json(
-      { status: "error", message: "حدث خطأ في السيرفر", ...(process.env.NODE_ENV !== "production" && { error: (error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error)) }) },
+      {
+        status: "error",
+        message: "حدث خطأ في السيرفر",
+        ...(process.env.NODE_ENV !== "production" && {
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      },
       { status: 500 }
     );
   }
@@ -114,7 +126,9 @@ export async function PUT(req: NextRequest) {
     }
 
     await connectDB();
-    const body = await req.json();
+    const rawBody = await req.json();
+    const body = sanitizeInput(rawBody);
+
     const parsed = cartItemSchema.safeParse(body);
     if (!parsed.success) {
       return NextResponse.json(
@@ -129,7 +143,7 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ status: "error", message: "السلة غير موجودة" }, { status: 404 });
     }
 
-    const item = cart.items.find((i : any) => i.productId.toString() === productId);
+    const item = cart.items.find((i: any) => i.productId.toString() === productId);
     if (!item) {
       return NextResponse.json(
         { status: "error", message: "هذا المنتج غير موجود في السلة" },
@@ -144,7 +158,13 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ status: "success", message: "تم تحديث الكمية", cart });
   } catch (error: unknown) {
     return NextResponse.json(
-      { status: "error", message: "حدث خطأ في السيرفر", ...(process.env.NODE_ENV !== "production" && { error: (error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error)) }) },
+      {
+        status: "error",
+        message: "حدث خطأ في السيرفر",
+        ...(process.env.NODE_ENV !== "production" && {
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      },
       { status: 500 }
     );
   }
@@ -175,16 +195,20 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ status: "error", message: "السلة غير موجودة" }, { status: 404 });
     }
 
-    cart.items = cart.items.filter((i : any) => i.productId.toString() !== productId);
+    cart.items = cart.items.filter((i: any) => i.productId.toString() !== productId);
     await cart.save();
 
     return NextResponse.json({ status: "success", message: "تم حذف المنتج من السلة", cart });
   } catch (error: unknown) {
     return NextResponse.json(
-      { status: "error", message: "حدث خطأ في السيرفر", ...(process.env.NODE_ENV !== "production" && { error: (error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error)) }) },
+      {
+        status: "error",
+        message: "حدث خطأ في السيرفر",
+        ...(process.env.NODE_ENV !== "production" && {
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      },
       { status: 500 }
     );
   }
 }
-
-

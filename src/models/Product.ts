@@ -1,6 +1,6 @@
 // src/models/Product.ts
 
-import mongoose, { Schema, models, model } from "mongoose";
+import mongoose, { Schema, models, model, type Model } from "mongoose";
 
 export interface IRating {
   userId: mongoose.Types.ObjectId;
@@ -114,9 +114,6 @@ const ProductSchema = new Schema<IProduct>(
       },
     },
 
-    // =========================================
-    // سعر الشراء
-    // =========================================
     purchasePrice: {
       type: Number,
       required: true,
@@ -124,54 +121,38 @@ const ProductSchema = new Schema<IProduct>(
       default: 0,
     },
 
-    // =========================================
-    // سعر البيع
-    // =========================================
     price: {
       type: Number,
       required: true,
       min: 0,
     },
 
-    // =========================================
-    // سعر الخصم
-    // =========================================
     discountPrice: {
       type: Number,
       min: 0,
     },
 
-    // =========================================
-    // الصور
-    // =========================================
     images: [
       {
         type: String,
       },
     ],
 
-    // =========================================
-    // القسم
-    // =========================================
     categoryId: {
       type: Schema.Types.ObjectId,
       ref: "Category",
       required: true,
+      index: true,
     },
 
-    // =========================================
-    // المخزون
-    // =========================================
     stock: {
       type: Number,
       required: true,
       default: 0,
       min: 0,
+      index: true,
     },
 
-    // =========================================
-    // المقاسات
-    // =========================================
     sizes: [
       {
         type: String,
@@ -179,9 +160,6 @@ const ProductSchema = new Schema<IProduct>(
       },
     ],
 
-    // =========================================
-    // الألوان
-    // =========================================
     colors: [
       {
         type: String,
@@ -189,9 +167,6 @@ const ProductSchema = new Schema<IProduct>(
       },
     ],
 
-    // =========================================
-    // التقييمات
-    // =========================================
     ratings: [RatingSchema],
   },
   {
@@ -199,26 +174,22 @@ const ProductSchema = new Schema<IProduct>(
   }
 );
 
-// =========================================
-// Indexes
-// =========================================
-
+// الفهارس لتحسين الأداء والبحث الفوري
+ProductSchema.index({ categoryId: 1, createdAt: -1 });
+ProductSchema.index({ categoryId: 1, price: 1 });
+ProductSchema.index({ price: 1 });
+ProductSchema.index({ purchasePrice: 1 });
+ProductSchema.index({ stock: 1 });
+ProductSchema.index({ createdAt: -1 });
 ProductSchema.index({
-  categoryId: 1,
-  createdAt: -1,
+  "name.ar": "text",
+  "name.en": "text",
+  "description.ar": "text",
+  "description.en": "text",
 });
 
-ProductSchema.index({
-  price: 1,
-});
-
-ProductSchema.index({
-  purchasePrice: 1,
-});
-
-ProductSchema.index({
-  stock: 1,
-});
-
-export default models.Product ||
+const Product: Model<IProduct> =
+  (models.Product as Model<IProduct>) ||
   model<IProduct>("Product", ProductSchema);
+
+export default Product;

@@ -1,11 +1,9 @@
 // src/app/api/auth/login/route.ts
 // POST /api/auth/login
-// الآن يشمل: حماية من محاولات التخمين المتكرر، قفل الحساب بعد 5 محاولات فاشلة،
-// ودعم المصادقة الثنائية (2FA) إن كانت مُفعّلة على الحساب (عادة حسابات الأدمن)
+// يشمل: حماية متقدمة من محاولات التخمين، قفل الحساب، دعم تشفير لاراول ($2y$) والمصادقة الثنائية (2FA)
 
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
-import bcrypt from "bcryptjs";
 import { authenticator } from "otplib";
 import { z } from "zod";
 import { connectDB } from "@/lib/db";
@@ -15,6 +13,7 @@ import { loginSchema } from "@/lib/validation";
 import { checkRateLimit, resetRateLimit, getClientIp } from "@/lib/rateLimit";
 import { sanitizeInput } from "@/lib/sanitize";
 import { setAuthCookie } from "@/lib/session";
+import { comparePassword } from "@/lib/password";
 
 const loginWith2FASchema = loginSchema.extend({
   twoFactorCode: z.string().regex(/^\d{6}$/).optional(),
@@ -35,15 +34,15 @@ export async function POST(req: NextRequest) {
     }
     const { email, password, twoFactorCode } = parsed.data;
 
-    // 1. الحماية من التخمين المتكرر - نحسبها حسب (IP + البريد) معاً
+    // 1. الحماية من التخمين المتكرر (Rate Limiting)
     const clientIp = getClientIp(req);
-    const rateLimitKey = `login:${clientIp}:${email}`;
-    const rateLimit = checkRateLimit(rateLimitKey);
+    const rateLimitKey = `login:${clientIp}:${email.toLowerCase().trim()}`;
+    const rateLimit = checkRateLimit(rateLimitKey, 5, 15 * 60 * 1000);
     if (!rateLimit.allowed) {
       return NextResponse.json(
         {
           status: "error",
-          message: `محاولات كثيرة جداً. حاول مرة أخرى بعد ${Math.ceil(
+          message: `محاولات كثيرة جداً. يرجى المحاولة مرة أخرى بعد ${Math.ceil(
             (rateLimit.retryAfterSeconds || 0) / 60
           )} دقيقة`,
         },
@@ -51,8 +50,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // نطلب صراحة twoFactorSecret لأن select: false في النموذج يخفيه افتراضياً
-    const user = await User.findOne({ email }).select("+twoFactorSecret");
+    const user = await User.findOne({ email: email.toLowerCase().trim() }).select("+password +twoFactorSecret");
 
     if (!user) {
       return NextResponse.json(
@@ -61,18 +59,19 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 2. التحقق من قفل الحساب (بسبب محاولات فاشلة سابقة كثيرة)
+    // 2. التحقق من قفل الحساب
     if (user.lockUntil && user.lockUntil > new Date()) {
       const minutesLeft = Math.ceil((user.lockUntil.getTime() - Date.now()) / 60000);
       return NextResponse.json(
-        { status: "error", message: `الحساب مقفل مؤقتاً. حاول بعد ${minutesLeft} دقيقة` },
+        { status: "error", message: `الحساب مقفل مؤقتاً لحمايتك. حاول بعد ${minutesLeft} دقيقة` },
         { status: 423 }
       );
     }
 
-    const isPasswordCorrect = await bcrypt.compare(password, user.password);
+    // 3. مقارنة كلمة المرور مع دعم كامل لتشفير لاراول $2y$ و $2x$ و bcryptjs
+    const isPasswordCorrect = await comparePassword(password, user.password);
     if (!isPasswordCorrect) {
-      user.failedLoginAttempts += 1;
+      user.failedLoginAttempts = (user.failedLoginAttempts || 0) + 1;
       if (user.failedLoginAttempts >= 5) {
         user.lockUntil = new Date(Date.now() + 15 * 60 * 1000);
       }
@@ -84,9 +83,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 2.5. التحقق من تأكيد البريد الإلكتروني - لا يسمح بالدخول إذا لم يتم تفعيله
+    // 4. التحقق من تأكيد البريد الإلكتروني
     if (!user.emailVerified) {
-      // نولّد كود تحقق جديد ونرسله له لتسهيل التفعيل فوراً
       const verificationCode = crypto.randomInt(100000, 1000000).toString();
       user.emailVerificationCode = verificationCode;
       user.emailVerificationExpires = new Date(Date.now() + 15 * 60 * 1000);
@@ -109,11 +107,11 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 3. إذا كان الحساب مُفعَّلاً عليه 2FA (المصادقة الثنائية)
+    // 5. التحقق من المصادقة الثنائية (2FA) إن كانت مفعلة
     if (user.twoFactorEnabled) {
       if (!twoFactorCode) {
         return NextResponse.json(
-          { status: "2fa_required", message: "يجب إدخال كود المصادقة الثنائية" },
+          { status: "2fa_required", message: "يجب إدخال رمز المصادقة الثنائية (2FA)" },
           { status: 200 }
         );
       }
@@ -125,12 +123,13 @@ export async function POST(req: NextRequest) {
 
       if (!isCodeValid) {
         return NextResponse.json(
-          { status: "error", message: "كود المصادقة الثنائية غير صحيح" },
+          { status: "error", message: "رمز المصادقة الثنائية غير صحيح أو منتهي الصلاحية" },
           { status: 401 }
         );
       }
     }
 
+    // تصفير محاولات الدخول الفاشلة والـ Rate Limit
     user.failedLoginAttempts = 0;
     user.lockUntil = undefined;
     await user.save();
@@ -142,7 +141,7 @@ export async function POST(req: NextRequest) {
       status: "success",
       message: "تم تسجيل الدخول بنجاح",
       user: {
-        id: user._id,
+        id: user._id.toString(),
         name: user.name,
         email: user.email,
         role: user.role,
@@ -155,10 +154,14 @@ export async function POST(req: NextRequest) {
     return response;
   } catch (error: unknown) {
     return NextResponse.json(
-      { status: "error", message: "حدث خطأ في السيرفر", ...(process.env.NODE_ENV !== "production" && { error: (error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error)) }) },
+      {
+        status: "error",
+        message: "حدث خطأ في السيرفر",
+        ...(process.env.NODE_ENV !== "production" && {
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      },
       { status: 500 }
     );
   }
 }
-
-

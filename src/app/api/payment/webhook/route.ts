@@ -12,8 +12,13 @@ import Order from "@/models/Order";
 export async function POST(req: NextRequest) {
   try {
     const body = await req.text();
-    const signature = req.headers.get("stripe-signature") as string;
-    const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET as string;
+    const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+    if (!webhookSecret || typeof webhookSecret !== "string" || !signature) {
+      return NextResponse.json(
+        { status: "error", message: "إعدادات أو ترويسة Stripe Webhook غير صالحة" },
+        { status: 400 }
+      );
+    }
 
     let event;
     try {
@@ -21,7 +26,7 @@ export async function POST(req: NextRequest) {
       event = stripe.webhooks.constructEvent(body, signature, webhookSecret);
     } catch (err: unknown) {
       return NextResponse.json(
-        { status: "error", message: `خطأ في توقيع الـ Webhook: ${(err instanceof Error ? (err instanceof Error ? err.message : String(err)) : String(err))}` },
+        { status: "error", message: `خطأ في توقيع الـ Webhook: ${(err instanceof Error ? err.message : String(err))}` },
         { status: 400 }
       );
     }
